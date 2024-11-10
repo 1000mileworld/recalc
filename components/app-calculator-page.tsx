@@ -1,27 +1,32 @@
 'use client'
 
 // Add this at the very top of your file, before any code
+type InvestmentType = 'buyAndHold' | 'flip' | 'brrrr';
+
+type MonthData = {
+  value: number;
+  debt: number;
+  displayDebt?: number;
+  equity: number;
+  cashInvested: number;
+  displayCashInvested?: number;
+  totalCashInvested: number;
+  interestPaid: number;
+  rent: number;
+  expenses: number;
+  cashFlow: number;
+  equityGrowth: number;
+  totalReturn: number;
+  returnOnInvestedCash: number;
+  dscr: number;
+  isRehabPeriod?: boolean;
+  [key: string]: number | undefined | boolean; // Index signature allowing string keys
+};
+
 type CalculatedOutputType = {
   [year: number]: {
     months: {
-      [month: number]: {
-        value: number;
-        debt: number;
-        displayDebt?: number; // Add '?' if this property might be undefined
-        equity: number;
-        cashInvested: number;
-        displayCashInvested?: number; // Add '?' if this property might be undefined
-        totalCashInvested: number;
-        interestPaid: number;
-        rent: number;
-        expenses: number;
-        cashFlow: number;
-        equityGrowth: number;
-        totalReturn: number;
-        returnOnInvestedCash: number;
-        dscr: number;
-        isRehabPeriod?: boolean; // Optional property
-      };
+      [month: number]: MonthData;
     };
     yearlyTotals: {
       interestPaid: number;
@@ -282,7 +287,7 @@ export function Page() {
       { id: 'customItem1', description: '', quantity: 0, rentalPrice: 0, airbnbPrice: 0, price: 0, extended: 0, checked: false },
     ],
   })
-  const [expandedYears, setExpandedYears] = useState({})
+  const [expandedYears, setExpandedYears] = useState<{ [key: number]: boolean }>({});
   const [saleInputs, setSaleInputs] = useState({
     agentCommission: 6,
     closingCosts: 1,
@@ -423,7 +428,6 @@ const [calculatedOutput, setCalculatedOutput] = useState<CalculatedOutputType>({
     setExpandedYears({});
   };
   
-  type InvestmentType = 'buyAndHold' | 'flip' | 'brrrr';
   const handleInvestmentTypeChange = (type: InvestmentType) => {
     log('Changing investment type to:', type);
     setInvestmentType(type);
@@ -681,7 +685,7 @@ const [calculatedOutput, setCalculatedOutput] = useState<CalculatedOutputType>({
     } else if (investmentType === 'flip') {
       const cashRequired = findMaxTotalCashInvested(calculatedOutput);
       const profit = calculateProfit();
-      const profitAfterTax = profit * (1 - parseFloat(saleInputs.marginalTaxRate) / 100);
+      const profitAfterTax = profit * (1 - saleInputs.marginalTaxRate / 100);
       
       setTextColorForValue(doc, cashRequired);
       doc.text(`Cash Required: ${formatPDFNumber(cashRequired)}`, 10, yPos);
@@ -819,8 +823,8 @@ const [calculatedOutput, setCalculatedOutput] = useState<CalculatedOutputType>({
     const rehabCost = parseFloat(dealDetails.rehabCost) || 0;
     const purchasePrice = parseFloat(dealDetails.purchasePrice) || 0;
     const initialClosingCosts = parseFloat(dealDetails.closingCosts) || 0;
-    const agentCommission = parseFloat(saleInputs.agentCommission) / 100 || 0;
-    const saleClosingCosts = parseFloat(saleInputs.closingCosts) / 100 || 0;
+    const agentCommission = saleInputs.agentCommission / 100 || 0;
+    const saleClosingCosts = saleInputs.closingCosts / 100 || 0;
     const totalCashFlow = calculateTotalCashFlow(calculatedOutput);
     
     return (afterRepairValue - rehabCost - purchasePrice - initialClosingCosts) - 
@@ -1007,6 +1011,7 @@ After Repair Value: $${formatNumber(parseFloat(dealDetails.afterRepairValue))}`)
           totalReturn: 0,
           cashInvested: 0,
           totalCashInvested: 0,
+          returnOnInvestedCash: 0,
           dscr: 0, // This will be updated after processing all months
         }
       };
@@ -1018,6 +1023,8 @@ After Repair Value: $${formatNumber(parseFloat(dealDetails.afterRepairValue))}`)
         const rent = calculateRent(year, month);
         let principalPaid = 0;
         const isRehabPeriod = totalMonths <= rehabDuration;
+
+        debt = monthlyPayment = interestPaid = value = NaN;
 
         if (investmentType === 'flip') {
           if (totalMonths < saleMonth) {
@@ -1043,9 +1050,9 @@ After Repair Value: $${formatNumber(parseFloat(dealDetails.afterRepairValue))}`)
             }
           } else if (totalMonths === saleMonth) {
             // Month of sale
-            const agentCommissionRate = parseFloat(saleInputs.agentCommission) / 100;
-            const closingCostsRate = parseFloat(saleInputs.closingCosts) / 100;
-            const previousMonthDebt = newOutput[year].months[parseInt(month) - 1]?.debt || 0;
+            const agentCommissionRate = saleInputs.agentCommission / 100;
+            const closingCostsRate = saleInputs.closingCosts / 100;
+            const previousMonthDebt = newOutput[year].months[month - 1]?.debt || 0;
             
             value = 0;
             debt = 0;
@@ -1061,6 +1068,20 @@ After Repair Value: $${formatNumber(parseFloat(dealDetails.afterRepairValue))}`)
             cashInvested = 0;
             cashFlow = 0;
             // equityGrowth and totalReturn will be set to 0 later
+          }
+          if (isRehabPeriod) {
+            value = purchasePrice;
+            debt = purchaseLoaned * purchasePrice + rehabLoaned * rehabCost;
+            interestPaid = debt * shortTermInterestRate;
+            if (totalMonths === 1) {
+              cashInvested = (1 - purchaseLoaned) * purchasePrice + (1 - rehabLoaned) * rehabCost + 
+                             shortTermLenderPoints * (purchaseLoaned * purchasePrice + rehabLoaned * rehabCost);
+            }
+          } else {
+            value = afterRepairValue;
+            debt = 0;
+            interestPaid = 0;
+            cashInvested = 0;
           }
         } else if (investmentType === 'buyAndHold') {
           if (totalMonths === 1) {
@@ -1134,24 +1155,10 @@ After Repair Value: $${formatNumber(parseFloat(dealDetails.afterRepairValue))}`)
           } else {
             const monthsSinceRehab = totalMonths - rehabDuration - 1;
             value = afterRepairValue * Math.pow(1 + monthlyAppreciation, monthsSinceRehab);
+            
             interestPaid = debt * longTermInterestRate;
             principalPaid = monthlyPayment - interestPaid;
             debt -= principalPaid;
-          }
-        } else if (investmentType === 'flip') {
-          if (isRehabPeriod) {
-            value = purchasePrice;
-            debt = purchaseLoaned * purchasePrice + rehabLoaned * rehabCost;
-            interestPaid = debt * shortTermInterestRate;
-            if (totalMonths === 1) {
-              cashInvested = (1 - purchaseLoaned) * purchasePrice + (1 - rehabLoaned) * rehabCost + 
-                             shortTermLenderPoints * (purchaseLoaned * purchasePrice + rehabLoaned * rehabCost);
-            }
-          } else {
-            value = afterRepairValue;
-            debt = 0;
-            interestPaid = 0;
-            cashInvested = 0;
           }
         }
 
@@ -1193,7 +1200,8 @@ After Repair Value: $${formatNumber(parseFloat(dealDetails.afterRepairValue))}`)
 
         // Ensure no NaN values
         for (const key in newOutput[year].months[month]) {
-          if (isNaN(newOutput[year].months[month][key])) {
+          const value = newOutput[year].months[month][key];
+          if (typeof value === 'number' && isNaN(value)) {
             newOutput[year].months[month][key] = 0;
           }
         }
@@ -1246,7 +1254,7 @@ After Repair Value: $${formatNumber(parseFloat(dealDetails.afterRepairValue))}`)
     }))
   }
 
-  const getTabsForInvestmentType = () => {
+  const getTabsForInvestmentType = (type?: InvestmentType) => {
     switch (investmentType) {
       case 'buyAndHold':
         return [
@@ -2181,8 +2189,8 @@ After Repair Value: $${formatNumber(parseFloat(dealDetails.afterRepairValue))}`)
                           const rehabCost = parseFloat(dealDetails.rehabCost) || 0;
                           const purchasePrice = parseFloat(dealDetails.purchasePrice) || 0;
                           const initialClosingCosts = parseFloat(dealDetails.closingCosts) || 0;  // Dollar amount
-                          const agentCommission = parseFloat(saleInputs.agentCommission) / 100 || 0;  // Percentage
-                          const saleClosingCosts = parseFloat(saleInputs.closingCosts) / 100 || 0;  // Percentage
+                          const agentCommission = saleInputs.agentCommission / 100 || 0;  // Percentage
+                          const saleClosingCosts = saleInputs.closingCosts / 100 || 0;  // Percentage
                           const totalCashFlow = calculateTotalCashFlow(calculatedOutput);
                           
                           const profit = (afterRepairValue - rehabCost - purchasePrice - initialClosingCosts) - 
@@ -2195,8 +2203,8 @@ After Repair Value: $${formatNumber(parseFloat(dealDetails.afterRepairValue))}`)
                             const rehabCost = parseFloat(dealDetails.rehabCost) || 0;
                             const purchasePrice = parseFloat(dealDetails.purchasePrice) || 0;
                             const initialClosingCosts = parseFloat(dealDetails.closingCosts) || 0;  // Dollar amount
-                            const agentCommission = parseFloat(saleInputs.agentCommission) / 100 || 0;  // Percentage
-                            const saleClosingCosts = parseFloat(saleInputs.closingCosts) / 100 || 0;  // Percentage
+                            const agentCommission = saleInputs.agentCommission / 100 || 0;  // Percentage
+                            const saleClosingCosts = saleInputs.closingCosts / 100 || 0;  // Percentage
                             const totalCashFlow = calculateTotalCashFlow(calculatedOutput);
                             
                             const profit = (afterRepairValue - rehabCost - purchasePrice - initialClosingCosts) - 
@@ -2219,9 +2227,9 @@ After Repair Value: $${formatNumber(parseFloat(dealDetails.afterRepairValue))}`)
                           const rehabCost = parseFloat(dealDetails.rehabCost) || 0;
                           const purchasePrice = parseFloat(dealDetails.purchasePrice) || 0;
                           const initialClosingCosts = parseFloat(dealDetails.closingCosts) || 0;  // Dollar amount
-                          const agentCommission = parseFloat(saleInputs.agentCommission) / 100 || 0;  // Percentage
-                          const saleClosingCosts = parseFloat(saleInputs.closingCosts) / 100 || 0;  // Percentage
-                          const marginalTaxRate = parseFloat(saleInputs.marginalTaxRate) / 100 || 0;
+                          const agentCommission = saleInputs.agentCommission / 100 || 0;  // Percentage
+                          const saleClosingCosts = saleInputs.closingCosts / 100 || 0;  // Percentage
+                          const marginalTaxRate = saleInputs.marginalTaxRate / 100 || 0;
                           const totalCashFlow = calculateTotalCashFlow(calculatedOutput);
                           
                           const profit = (afterRepairValue - rehabCost - purchasePrice - initialClosingCosts) - 
@@ -2235,9 +2243,9 @@ After Repair Value: $${formatNumber(parseFloat(dealDetails.afterRepairValue))}`)
                             const rehabCost = parseFloat(dealDetails.rehabCost) || 0;
                             const purchasePrice = parseFloat(dealDetails.purchasePrice) || 0;
                             const initialClosingCosts = parseFloat(dealDetails.closingCosts) || 0;  // Dollar amount
-                            const agentCommission = parseFloat(saleInputs.agentCommission) / 100 || 0;  // Percentage
-                            const saleClosingCosts = parseFloat(saleInputs.closingCosts) / 100 || 0;  // Percentage
-                            const marginalTaxRate = parseFloat(saleInputs.marginalTaxRate) / 100 || 0;
+                            const agentCommission = saleInputs.agentCommission / 100 || 0;  // Percentage
+                            const saleClosingCosts = saleInputs.closingCosts / 100 || 0;  // Percentage
+                            const marginalTaxRate = saleInputs.marginalTaxRate / 100 || 0;
                             const totalCashFlow = calculateTotalCashFlow(calculatedOutput);
                             
                             const profit = (afterRepairValue - rehabCost - purchasePrice - initialClosingCosts) - 
@@ -2295,7 +2303,7 @@ After Repair Value: $${formatNumber(parseFloat(dealDetails.afterRepairValue))}`)
                         </div>
                       </TableCell>
                       <TableCell>${formatNumber(data.months[12].value)}</TableCell>
-                      <TableCell className="text-red-500">${formatNumber(data.months[12].displayDebt)}</TableCell>
+                      <TableCell className="text-red-500">${formatNumber(data.months[12].displayDebt ?? NaN)}</TableCell>
                       <TableCell className={data.months[12].equity < 0 ? 'text-red-500' : ''}>${formatNumber(data.months[12].equity)}</TableCell>
                       <TableCell className={data.yearlyTotals.cashInvested < 0 ? 'text-red-500' : ''}>${formatNumber(data.yearlyTotals.cashInvested)}</TableCell>
                       <TableCell className={data.yearlyTotals.totalCashInvested < 0 ? 'text-red-500' : ''}>${formatNumber(data.yearlyTotals.totalCashInvested)}</TableCell>
@@ -2307,7 +2315,7 @@ After Repair Value: $${formatNumber(parseFloat(dealDetails.afterRepairValue))}`)
                           <TableCell className="text-red-500">${formatNumber(Math.abs(data.yearlyTotals.expenses))}</TableCell>
                         </>
                       )}
-                      <TableCell className={calculatedOutput[year].yearlyTotals.cashFlow < 0 ? 'text-red-500' : ''}>${formatNumber(calculateYearlyTotals(data).cashFlow)}</TableCell>
+                      <TableCell className={calculatedOutput[Number(year)].yearlyTotals.cashFlow < 0 ? 'text-red-500' : ''}>${formatNumber(calculateYearlyTotals(data).cashFlow)}</TableCell>
                       <TableCell className={data.yearlyTotals.equityGrowth < 0 ? 'text-red-500' : ''}>${formatNumber(data.yearlyTotals.equityGrowth)}</TableCell>
                       <TableCell className={data.yearlyTotals.totalReturn < 0 ? 'text-red-500' : ''}>${formatNumber(data.yearlyTotals.totalReturn)}</TableCell>
                       {investmentType !== 'flip' && (
@@ -2349,9 +2357,9 @@ After Repair Value: $${formatNumber(parseFloat(dealDetails.afterRepairValue))}`)
                                 <TableRow key={`year-${year}-month-${month}`} className="bg-muted/40 hover:bg-muted/50">
                                   <TableCell>{month}</TableCell>
                                   <TableCell>${formatNumber(monthData.value)}</TableCell>
-                                  <TableCell className="text-red-500">${formatNumber(monthData.displayDebt)}</TableCell>
+                                  <TableCell className="text-red-500">${formatNumber(monthData.displayDebt ?? NaN)}</TableCell>
                                   <TableCell className={monthData.equity < 0 ? 'text-red-500' : ''}>${formatNumber(monthData.equity)}</TableCell>
-                                  <TableCell className={monthData.displayCashInvested < 0 ? 'text-red-500' : ''}>${formatNumber(monthData.displayCashInvested)}</TableCell>
+                                  <TableCell className={monthData.displayCashInvested ?? NaN < 0 ? 'text-red-500' : ''}>${formatNumber(monthData.displayCashInvested ?? NaN)}</TableCell>
                                   <TableCell className={monthData.totalCashInvested < 0 ? 'text-red-500' : ''}>${formatNumber(monthData.totalCashInvested)}</TableCell>
                                   <TableCell className={monthData.interestPaid < 0 ? 'text-red-500' : ''}>${formatNumber(monthData.interestPaid)}</TableCell>
                                   {investmentType !== 'flip' && (
