@@ -422,7 +422,8 @@ const [calculatedOutput, setCalculatedOutput] = useState<CalculatedOutputType>({
     setIsCalculated(false);
     setExpandedYears({});
   };
-
+  
+  type InvestmentType = 'buyAndHold' | 'flip' | 'brrrr';
   const handleInvestmentTypeChange = (type: InvestmentType) => {
     log('Changing investment type to:', type);
     setInvestmentType(type);
