@@ -1254,7 +1254,7 @@ After Repair Value: $${formatNumber(parseFloat(dealDetails.afterRepairValue))}`)
     }))
   }
 
-  const getTabsForInvestmentType = (type?: InvestmentType) => {
+  const getTabsForInvestmentType = (investmentType?: InvestmentType) => {
     switch (investmentType) {
       case 'buyAndHold':
         return [
